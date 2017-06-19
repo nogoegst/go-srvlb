@@ -1,15 +1,13 @@
 // Copyright 2016 Michal Witkowski. All Rights Reserved.
 // See LICENSE for licensing terms.
 
-
-
 package grpcsrvlb
 
 import (
 	"fmt"
 	"time"
 
-	"github.com/mwitkow/go-srvlb/srv"
+	"github.com/nogoegst/go-srvlb/srv"
 	"google.golang.org/grpc/naming"
 )
 
