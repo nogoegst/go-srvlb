@@ -4,8 +4,9 @@ package srv
 
 import (
 	"errors"
-	"fmt"
 	"net"
+	"strconv"
+	"sync"
 	"time"
 )
 
@@ -26,13 +27,28 @@ func (r *golangResolver) Lookup(domainName string) ([]*Target, error) {
 		return nil, err
 	}
 	ret := []*Target{}
-	// This is naive and will cause a lot of latency.
+	addrch := make(chan string)
+	var wg sync.WaitGroup
 	for _, s := range srvs {
-		addrs, err := net.LookupHost(s.Target)
-		if err != nil {
-			continue
-		}
-		ret = append(ret, &Target{Ttl: r.ttl, DialAddr: fmt.Sprintf("%v:%v", addrs[0], s.Port)})
+		wg.Add(1)
+		go func(s *net.SRV) {
+			addrs, err := net.LookupHost(s.Target)
+			if err != nil {
+				return
+			}
+			if len(addrs) == 0 {
+				return
+			}
+			addrch <- net.JoinHostPort(addrs[0], strconv.FormatUint(uint64(s.Port), 10))
+			wg.Done()
+		}(s)
+	}
+	go func() {
+		wg.Wait()
+		close(addrch)
+	}()
+	for da := range addrch {
+		ret = append(ret, &Target{Ttl: r.ttl, DialAddr: da})
 	}
 	if len(ret) == 0 {
 		return nil, errors.New("failed resolving hostnames for SRV entries")
