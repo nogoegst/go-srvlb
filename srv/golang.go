@@ -4,8 +4,10 @@ package srv
 
 import (
 	"errors"
+	"fmt"
 	"net"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -22,6 +24,21 @@ type golangResolver struct {
 }
 
 func (r *golangResolver) Lookup(domainName string) ([]*Target, error) {
+	if !strings.HasPrefix(domainName, "_") { // non-SRV
+		host, port, err := net.SplitHostPort(domainName)
+		if err != nil {
+			return nil, err
+		}
+		addrs, err := net.LookupHost(host)
+		if err != nil {
+			return nil, err
+		}
+		if len(addrs) == 0 {
+			return nil, fmt.Errorf("no addresses for this hostname: %s", host)
+		}
+		dialAddr := net.JoinHostPort(addrs[0], port)
+		return []*Target{&Target{Ttl: r.ttl, DialAddr: dialAddr}}, nil
+	}
 	_, srvs, err := net.LookupSRV("", "", domainName)
 	if err != nil {
 		return nil, err
