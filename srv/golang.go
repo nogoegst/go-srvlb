@@ -3,10 +3,8 @@
 package srv
 
 import (
-	"errors"
-	"fmt"
 	"net"
-	"sync"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -24,50 +22,23 @@ type golangResolver struct {
 
 func (r *golangResolver) Lookup(domainName string) ([]*Target, error) {
 	if !strings.HasPrefix(domainName, "_") { // non-SRV
-		host, port, err := net.SplitHostPort(domainName)
-		if err != nil {
-			return nil, err
+		target := &Target{
+			Ttl:      r.ttl,
+			DialAddr: domainName,
 		}
-		addrs, err := net.LookupHost(host)
-		if err != nil {
-			return nil, err
-		}
-		if len(addrs) == 0 {
-			return nil, fmt.Errorf("no addresses for this hostname: %s", host)
-		}
-		dialAddr := net.JoinHostPort(addrs[0], port)
-		return []*Target{&Target{Ttl: r.ttl, DialAddr: dialAddr}}, nil
+		return []*Target{target}, nil
 	}
 	_, srvs, err := net.LookupSRV("", "", domainName)
 	if err != nil {
 		return nil, err
 	}
 	ret := []*Target{}
-	addrCh := make(chan string)
-	var wg sync.WaitGroup
 	for _, s := range srvs {
-		wg.Add(1)
-		go func(s *net.SRV) {
-			defer wg.Done()
-			addrs, err := net.LookupHost(s.Target)
-			if err != nil {
-				return
-			}
-			if len(addrs) == 0 {
-				return
-			}
-			addrCh <- net.JoinHostPort(addrs[0], fmt.Sprintf("%d", s.Port))
-		}(s)
-	}
-	go func() {
-		wg.Wait()
-		close(addrCh)
-	}()
-	for da := range addrCh {
-		ret = append(ret, &Target{Ttl: r.ttl, DialAddr: da})
-	}
-	if len(ret) == 0 {
-		return nil, errors.New("failed resolving hostnames for SRV entries")
+		target := &Target{
+			Ttl:      r.ttl,
+			DialAddr: net.JoinHostPort(s.Target, strconv.FormatUint(uint64(s.Port), 10)),
+		}
+		ret = append(ret, target)
 	}
 	return ret, nil
 }
