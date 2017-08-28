@@ -6,8 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 )
@@ -44,11 +42,12 @@ func (r *golangResolver) Lookup(domainName string) ([]*Target, error) {
 		return nil, err
 	}
 	ret := []*Target{}
-	addrch := make(chan string)
+	addrCh := make(chan string)
 	var wg sync.WaitGroup
 	for _, s := range srvs {
 		wg.Add(1)
 		go func(s *net.SRV) {
+			defer wg.Done()
 			addrs, err := net.LookupHost(s.Target)
 			if err != nil {
 				return
@@ -56,15 +55,14 @@ func (r *golangResolver) Lookup(domainName string) ([]*Target, error) {
 			if len(addrs) == 0 {
 				return
 			}
-			addrch <- net.JoinHostPort(addrs[0], strconv.FormatUint(uint64(s.Port), 10))
-			wg.Done()
+			addrCh <- net.JoinHostPort(addrs[0], fmt.Sprintf("%d", s.Port))
 		}(s)
 	}
 	go func() {
 		wg.Wait()
-		close(addrch)
+		close(addrCh)
 	}()
-	for da := range addrch {
+	for da := range addrCh {
 		ret = append(ret, &Target{Ttl: r.ttl, DialAddr: da})
 	}
 	if len(ret) == 0 {
